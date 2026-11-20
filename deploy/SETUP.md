@@ -35,14 +35,53 @@ Verify inside the CT before going further:
     install -m 600 -o plexfiler /dev/null /etc/plex-filer/env
     echo 'ANTHROPIC_API_KEY=sk-ant-...' > /etc/plex-filer/env
 
-## 4. Dry run first (calls Claude, copies nothing, records nothing)
+## 4. Email notifications (Gmail)
+
+You get one email per run when something was filed, needs review, or failed. Quiet runs send nothing.
+Subject lines: `Plex: 3 new items filed` or `Plex: ATTENTION - 1 error(s), 2 for review`.
+
+### 4a. Create a Gmail app password
+Gmail will not accept your normal password for scripts. You need an app password:
+1. Sign in at https://myaccount.google.com/security and turn on **2-Step Verification** (required; app passwords don't exist without it).
+2. Open https://myaccount.google.com/apppasswords (or search "App passwords" in your Google account settings).
+3. Name it `plex-filer` and click **Create**.
+4. Google shows a 16-character password like `abcd efgh ijkl mnop`. Copy it now; it is shown only once.
+   **Remove the spaces** when you save it.
+
+Notes: if the app-passwords page is missing, 2-Step Verification is off, or the account is a
+Workspace account whose admin disabled it, or Advanced Protection is on. Revoke the password
+any time from the same page.
+
+### 4b. Store the credentials (inside the CT)
+Append to `/etc/plex-filer/env` (mode 600, owned by plexfiler; no quotes, no spaces around `=`):
+
+    SMTP_USER=youraddress@gmail.com
+    SMTP_PASSWORD=abcdefghijklmnop
+
+### 4c. Enable it in the config
+In `/etc/plex-filer/config.toml`, set `[notify]` `notify_enabled = true` and `mail_to` to where
+you want mail delivered (it can be the same Gmail address).
+
+### 4d. Send a test email
+
+    sudo -u plexfiler env $(cat /etc/plex-filer/env) \
+      /opt/plex-filer/venv/bin/python -m plex_filer -c /etc/plex-filer/config.toml --test-email
+
+Check the inbox (and spam). If it landed in spam, mark it "Not spam" and create a Gmail filter on
+subject `Plex:` with **Never send it to Spam**. Mail sent from and to the same address is
+sometimes filtered, so check All Mail too.
+
+Troubleshooting: `Username and Password not accepted` means a wrong or space-containing app password
+or a typo in `SMTP_USER`; `timed out` means the CT can't reach smtp.gmail.com:587 (firewall/DNS).
+
+## 5. Dry run first (calls Claude, copies nothing, records nothing, sends no email)
 
     sudo -u plexfiler env $(cat /etc/plex-filer/env) \
       /opt/plex-filer/venv/bin/python -m plex_filer -c /etc/plex-filer/config.toml --dry-run
 
 Read the plan. Compare with what FileBot produced for the same files. Tune `min_confidence` if needed.
 
-## 5. Enable
+## 6. Enable
 
     cp deploy/plex-filer.{service,timer} /etc/systemd/system/
     systemctl daemon-reload && systemctl enable --now plex-filer.timer

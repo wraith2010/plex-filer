@@ -14,6 +14,15 @@ movie_library = "/mnt/plex/movies"     # flat: "Movie Name (Year).mkv", no subfo
 review_dir    = "/data/stage/review"   # unidentified files + a .json with Claude's reasoning
 state_dir     = "/var/lib/plex-filer"
 
+[notify]
+# One summary email per run; nothing is sent when a run had nothing to report.
+# SMTP_USER and SMTP_PASSWORD (a Gmail app password) go in /etc/plex-filer/env.
+notify_enabled = true
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+mail_from = ""                       # blank = same as SMTP_USER
+mail_to   = "you@example.com"
+
 [behavior]
 age_minutes = 60            # a file must be untouched this long (download-complete heuristic)
 min_video_mb = 50           # smaller files are treated as samples/stubs

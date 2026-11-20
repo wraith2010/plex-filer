@@ -13,6 +13,7 @@ from .config import Config
 from .identify import Identifier, Identity
 from .ledger import Ledger
 from .naming import LibraryIndex, movie_dest, tv_dest
+from .notify import Notifier
 
 log = logging.getLogger("plex-filer")
 
@@ -32,11 +33,17 @@ class Filer:
         self.ledger = Ledger(cfg.db_path)
         self.ident = Identifier(cfg.model, cfg.api_key_env)  # dry-run still calls Claude
         self.stats = {"filed": 0, "duplicate": 0, "junk": 0, "review": 0, "error": 0}
+        self.notifier = Notifier(cfg)
+
+    def _error(self, msg: str, count: int = 1) -> None:
+        log.error(msg)
+        self.stats["error"] += count
+        self.notifier.add_error(msg)
 
     # ------------------------------------------------------------------ scan
     def scan(self, mode: str, source: Path) -> list[Candidate]:
         if not source.is_dir():
-            log.error("Source missing or unmounted: %s", source)
+            self._error(f"[{mode}] source missing or unmounted: {source}")
             return []
         cutoff = time.time() - self.cfg.age_minutes * 60
         min_bytes = self.cfg.min_video_mb * 1024 * 1024
@@ -71,7 +78,7 @@ class Filer:
             log.info("[%s] nothing new", mode)
             return
         if not library.is_dir():
-            log.error("[%s] library missing or unmounted, aborting this pass: %s", mode, library)
+            self._error(f"[{mode}] library missing or unmounted, {len(cands)} file(s) not processed: {library}")
             return
         log.info("[%s] %d new file(s)", mode, len(cands))
 
@@ -83,8 +90,7 @@ class Filer:
             try:
                 results = self.ident.identify(mode, [c.rel for c in batch], known)
             except Exception as e:  # API down, rate limited, etc: retry next run
-                log.error("Claude call failed, batch left for next run: %s", e)
-                self.stats["error"] += len(batch)
+                self._error(f"[{mode}] Claude call failed, {len(batch)} file(s) will retry next run: {e}")
                 continue
             for idx, cand in enumerate(batch):
                 ident = results.get(idx)
@@ -132,10 +138,10 @@ class Filer:
         try:
             self._copy_atomic(c.path, dest)
         except OSError as e:
-            log.error("Copy failed for %s: %s (will retry next run)", c.rel, e)
-            self.stats["error"] += 1
+            self._error(f"copy failed for {c.rel}: {e} (will retry next run)")
             return
         self._record(c.key, "filed", str(dest))
+        self.notifier.add_filed(str(dest.relative_to(library)))
 
     # --------------------------------------------------------------- helpers
     def _copy_atomic(self, src: Path, dest: Path) -> None:
@@ -164,10 +170,10 @@ class Filer:
                 "claude": ident.__dict__ if ident else None,
             }, indent=2))
         except OSError as e:
-            log.error("Could not quarantine %s: %s (will retry next run)", c.rel, e)
-            self.stats["error"] += 1
+            self._error(f"could not quarantine {c.rel}: {e} (will retry next run)")
             return
         self._record(c.key, "review", str(dest))
+        self.notifier.add_review(c.rel, reason)
 
     def _record(self, key: str, status: str, dest: str | None = None) -> None:
         if not self.dry_run:

@@ -21,6 +21,13 @@ class Config:
     review_dir: Path = Path("/data/stage/review")
     state_dir: Path = Path("/var/lib/plex-filer")
 
+    # Email notification (credentials come from env: SMTP_USER / SMTP_PASSWORD)
+    notify_enabled: bool = False
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    mail_from: str = ""  # blank = same as SMTP_USER
+    mail_to: str = ""
+
     # Behaviour
     age_minutes: int = 60
     min_video_mb: int = 50
