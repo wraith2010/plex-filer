@@ -1,0 +1,18 @@
+[Unit]
+Description=File downloads into the Plex library (Claude-assisted)
+After=network-online.target local-fs.target
+Wants=network-online.target
+RequiresMountsFor=/data/stage /mnt/plex
+
+[Service]
+Type=oneshot
+User=plexfiler
+Group=plexfiler
+EnvironmentFile=/etc/plex-filer/env
+WorkingDirectory=/opt/plex-filer
+ExecStart=/opt/plex-filer/venv/bin/python -m plex_filer -c /etc/plex-filer/config.toml
+# Hardening (the LXC is already isolated; this is cheap defence in depth)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/mnt/plex /data/stage /var/lib/plex-filer
+PrivateTmp=true

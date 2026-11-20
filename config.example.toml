@@ -1,0 +1,20 @@
+# Install to /etc/plex-filer/config.toml
+# The API key is NOT stored here: put ANTHROPIC_API_KEY in /etc/plex-filer/env
+
+[claude]
+model = "claude-haiku-5-5"
+batch_size = 20
+min_confidence = 0.8        # below this, the file goes to review instead of the library
+
+[paths]
+tv_source     = "/data/stage/tvshows"
+tv_library    = "/mnt/plex/tvshows"
+movie_source  = "/data/stage/movies"
+movie_library = "/mnt/plex/movies"     # flat: "Movie Name (Year).mkv", no subfolders
+review_dir    = "/data/stage/review"   # unidentified files + a .json with Claude's reasoning
+state_dir     = "/var/lib/plex-filer"
+
+[behavior]
+age_minutes = 60            # a file must be untouched this long (download-complete heuristic)
+min_video_mb = 50           # smaller files are treated as samples/stubs
+pad_season_folder = false   # false: "Season 4" (matches current library)  true: "Season 04"
