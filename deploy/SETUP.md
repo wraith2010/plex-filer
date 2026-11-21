@@ -58,9 +58,10 @@ Append to `/etc/plex-filer/env` (mode 600, owned by plexfiler; no quotes, no spa
     SMTP_USER=youraddress@gmail.com
     SMTP_PASSWORD=abcdefghijklmnop
 
-### 4c. Enable it in the config
-In `/etc/plex-filer/config.toml`, set `[notify]` `notify_enabled = true` and `mail_to` to where
-you want mail delivered (it can be the same Gmail address).
+### 4c. Config (optional)
+Email is on by default: once the credentials above are in place, mail is sent to `SMTP_USER`.
+To deliver elsewhere, set `[notify]` `mail_to` in `/etc/plex-filer/config.toml`. To turn email off,
+set `notify_enabled = false`.
 
 ### 4d. Send a test email
 

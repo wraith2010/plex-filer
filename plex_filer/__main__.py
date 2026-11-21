@@ -30,7 +30,7 @@ def main() -> int:
 
     if args.test_email:
         if not cfg.notify_enabled:
-            logging.error("notify_enabled is false in the config; set it to true first")
+            logging.error("notify_enabled is false in the config; remove it or set it to true first")
             return 1
         ok = Notifier(cfg).send("Plex: test email from plex-filer",
                                 "If you can read this, notifications work.")

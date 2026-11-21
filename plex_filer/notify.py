@@ -67,14 +67,14 @@ class Notifier:
         subject, body = (force_subject, force_body) if force_subject else self.build()
         user = os.environ.get("SMTP_USER")
         password = os.environ.get("SMTP_PASSWORD")
-        if not (user and password and cfg.mail_to):
-            log.error("Email enabled but SMTP_USER / SMTP_PASSWORD / mail_to not set; not sent")
+        if not (user and password):
+            log.warning("Email not configured (SMTP_USER / SMTP_PASSWORD not set); not sent")
             return False
 
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = cfg.mail_from or user
-        msg["To"] = cfg.mail_to
+        msg["To"] = cfg.mail_to or user
         msg.set_content(body)
         try:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port, timeout=15) as s:

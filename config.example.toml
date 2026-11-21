@@ -17,11 +17,12 @@ state_dir     = "/var/lib/plex-filer"
 [notify]
 # One summary email per run; nothing is sent when a run had nothing to report.
 # SMTP_USER and SMTP_PASSWORD (a Gmail app password) go in /etc/plex-filer/env.
+# On by default: email is sent whenever SMTP_USER/SMTP_PASSWORD are set. false = never.
 notify_enabled = true
 smtp_host = "smtp.gmail.com"
 smtp_port = 587
 mail_from = ""                       # blank = same as SMTP_USER
-mail_to   = "you@example.com"
+mail_to   = ""                       # blank = same as SMTP_USER (mail yourself)
 
 [behavior]
 age_minutes = 60            # a file must be untouched this long (download-complete heuristic)

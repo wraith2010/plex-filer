@@ -21,12 +21,13 @@ class Config:
     review_dir: Path = Path("/data/stage/review")
     state_dir: Path = Path("/var/lib/plex-filer")
 
-    # Email notification (credentials come from env: SMTP_USER / SMTP_PASSWORD)
-    notify_enabled: bool = False
+    # Email notification (credentials come from env: SMTP_USER / SMTP_PASSWORD).
+    # On by default: mail goes out whenever those credentials are present.
+    notify_enabled: bool = True
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     mail_from: str = ""  # blank = same as SMTP_USER
-    mail_to: str = ""
+    mail_to: str = ""    # blank = same as SMTP_USER
 
     # Behaviour
     age_minutes: int = 60
