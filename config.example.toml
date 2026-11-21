@@ -27,3 +27,7 @@ mail_to   = "you@example.com"
 age_minutes = 60            # a file must be untouched this long (download-complete heuristic)
 min_video_mb = 50           # smaller files are treated as samples/stubs
 pad_season_folder = false   # false: "Season 4" (matches current library)  true: "Season 04"
+# Empty movie_source as movies are handled: filed, duplicate, sent to review, or junk.
+# Release folders left with only .nfo/.srt/.jpg-style clutter are removed too.
+# TV is never drained (its source is the seeding dir).
+delete_movie_source = true

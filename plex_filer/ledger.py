@@ -1,7 +1,8 @@
 """SQLite record of source files already handled.
 
-The source dir is never drained (it doubles as the seeding dir), so without
-this every run would re-offer the whole thing. A file is keyed on
+The TV source dir is never drained (it doubles as the seeding dir), so without
+this every run would re-offer the whole thing. The movie source is drained
+(delete_movie_source); there the ledger also lets a failed delete be retried. A file is keyed on
 size + mtime + relative path: re-downloading or repacking changes the key and
 re-queues it; `touch`ing a file in the source re-queues it by hand.
 """
@@ -31,6 +32,10 @@ class Ledger:
 
     def seen(self, key: str) -> bool:
         return self.db.execute("SELECT 1 FROM handled WHERE key=?", (key,)).fetchone() is not None
+
+    def get(self, key: str) -> tuple[str, str | None] | None:
+        """(status, dest) for a handled file, or None."""
+        return self.db.execute("SELECT status, dest FROM handled WHERE key=?", (key,)).fetchone()
 
     def record(self, key: str, status: str, dest: str | None = None) -> None:
         self.db.execute(

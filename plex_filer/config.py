@@ -35,6 +35,18 @@ class Config:
     video_extensions: tuple[str, ...] = (".mkv", ".mp4", ".m4v", ".avi", ".ts")
     sample_markers: tuple[str, ...] = ("sample",)
 
+    # Movie source draining (TV is never drained: its source is the seeding dir).
+    # When on, every movie the filer has dealt with (filed, duplicate, sent to
+    # review, junk) is deleted from movie_source, and release folders left with
+    # only clutter are removed.
+    delete_movie_source: bool = True
+    # Non-video files that may be deleted along with an emptied release folder.
+    # A folder holding anything else (e.g. .rar parts) is left alone.
+    leftover_extensions: tuple[str, ...] = (
+        ".nfo", ".txt", ".srt", ".sub", ".idx", ".ass", ".ssa", ".sfv", ".md5",
+        ".jpg", ".jpeg", ".png", ".gif", ".url", ".nzb", ".exe", ".parts",
+    )
+
     @property
     def db_path(self) -> Path:
         return self.state_dir / "ledger.db"
@@ -64,6 +76,6 @@ def load_config(path: Path | None) -> Config:
     for k, v in list(flat.items()):
         if k.endswith(("_source", "_library")) or k in ("review_dir", "state_dir"):
             flat[k] = Path(v)
-        elif k in ("video_extensions", "sample_markers"):
-            flat[k] = tuple(v)
+        elif k in ("video_extensions", "sample_markers", "leftover_extensions"):
+            flat[k] = tuple(s.lower() for s in v)
     return Config(**flat)

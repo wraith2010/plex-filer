@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -32,8 +31,10 @@ class Filer:
         self.dry_run = dry_run
         self.ledger = Ledger(cfg.db_path)
         self.ident = Identifier(cfg.model, cfg.api_key_env)  # dry-run still calls Claude
-        self.stats = {"filed": 0, "duplicate": 0, "junk": 0, "review": 0, "error": 0}
+        self.stats = {"filed": 0, "duplicate": 0, "junk": 0, "review": 0, "error": 0,
+                      "source_deleted": 0}
         self.notifier = Notifier(cfg)
+        self._drain = False  # set per mode in _process: delete sources once handled
 
     def _error(self, msg: str, count: int = 1) -> None:
         log.error(msg)
@@ -57,10 +58,13 @@ class Filer:
             rel = p.relative_to(source).as_posix()
             key = Ledger.key(mode, rel, st.st_size, st.st_mtime)
             if self.ledger.seen(key):
+                if self._drain:  # handled on an earlier run but still here: retry the delete
+                    self._drain_handled(p, rel, key)
                 continue
             if any(m in p.name.lower() for m in self.cfg.sample_markers) or st.st_size < min_bytes:
                 log.info("Not an episode/movie, skipping: %s (%d MB)", rel, st.st_size >> 20)
                 self._record(key, "junk")
+                self._delete_source(p, rel)
                 continue
             found.append(Candidate(p, rel, st.st_size, key))
         return sorted(found, key=lambda c: c.rel)
@@ -73,6 +77,15 @@ class Filer:
         self._report_review_backlog()
 
     def _process(self, mode: str, source: Path, library: Path) -> None:
+        self._drain = mode == "movie" and self.cfg.delete_movie_source
+        try:
+            self._process_files(mode, source, library)
+        finally:
+            if self._drain and not self.dry_run:
+                self._prune_source(source)
+            self._drain = False
+
+    def _process_files(self, mode: str, source: Path, library: Path) -> None:
         cands = self.scan(mode, source)
         if not cands:
             log.info("[%s] nothing new", mode)
@@ -103,7 +116,8 @@ class Filer:
             return self._review(c, ident, "no answer from Claude")
         if ident.kind == "junk":
             log.info("Junk per Claude (%s): %s", ident.notes, c.rel)
-            return self._record(c.key, "junk")
+            self._record(c.key, "junk")
+            return self._delete_source(c.path, c.rel)
         if ident.confidence < self.cfg.min_confidence:
             return self._review(c, ident, f"low confidence {ident.confidence:.2f}")
 
@@ -129,12 +143,13 @@ class Filer:
 
         if dest.exists():
             log.info("Already in library (%s): %s", dest.name, c.rel)
-            return self._record(c.key, "duplicate", str(dest))
+            self._record(c.key, "duplicate", str(dest))
+            return self._delete_source(c.path, c.rel)
 
         log.info("%s%s -> %s  (%.2f, %s)", "[dry-run] " if self.dry_run else "",
                  c.rel, dest.relative_to(library), ident.confidence, ident.notes)
         if self.dry_run:
-            return
+            return self._delete_source(c.path, c.rel)  # logs only
         try:
             self._copy_atomic(c.path, dest)
         except OSError as e:
@@ -142,6 +157,7 @@ class Filer:
             return
         self._record(c.key, "filed", str(dest))
         self.notifier.add_filed(str(dest.relative_to(library)))
+        self._delete_source(c.path, c.rel)  # only reached once the copy is verified
 
     # --------------------------------------------------------------- helpers
     def _copy_atomic(self, src: Path, dest: Path) -> None:
@@ -158,14 +174,18 @@ class Filer:
     def _review(self, c: Candidate, ident: Identity | None, reason: str) -> None:
         log.warning("Review (%s): %s", reason, c.rel)
         if self.dry_run:
-            return
+            return self._delete_source(c.path, c.rel)  # logs only
         batch = self.cfg.review_dir / time.strftime("%Y-%m-%d")
         batch.mkdir(parents=True, exist_ok=True)
         dest = batch / c.path.name
+        n = 2  # a different file of the same name is already queued: don't clobber it
+        while dest.exists() and dest.stat().st_size != c.size:
+            dest = batch / f"{c.path.stem} ({n}){c.path.suffix}"
+            n += 1
         try:
             if not dest.exists():
                 self._copy_atomic(c.path, dest)
-            (batch / f"{c.path.name}.json").write_text(json.dumps({
+            (batch / f"{dest.name}.json").write_text(json.dumps({
                 "source": c.rel, "reason": reason,
                 "claude": ident.__dict__ if ident else None,
             }, indent=2))
@@ -174,6 +194,79 @@ class Filer:
             return
         self._record(c.key, "review", str(dest))
         self.notifier.add_review(c.rel, reason)
+        self._delete_source(c.path, c.rel)  # the review copy is now the only one
+
+    # ------------------------------------------------------------- draining
+    def _delete_source(self, path: Path, rel: str) -> None:
+        """Delete a handled source file when this mode drains its source."""
+        if not self._drain:
+            return
+        if self.dry_run:
+            log.info("[dry-run] would delete source: %s", rel)
+            return
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            self._error(f"could not delete source {rel}: {e} (will retry next run)")
+            return
+        log.info("Deleted source: %s", rel)
+        self.stats["source_deleted"] += 1
+
+    def _drain_handled(self, path: Path, rel: str, key: str) -> None:
+        """A file the ledger already handled is still in a drained source."""
+        row = self.ledger.get(key)
+        status, dest = row if row else (None, None)
+        if status in ("filed", "duplicate", "review") and not (dest and Path(dest).exists()):
+            # The copy we recorded is gone: the source may be the only copy left.
+            self._error(f"{rel} was {status} to {dest} but that file is missing; "
+                        f"source kept (touch it to re-queue)")
+            return
+        self._delete_source(path, rel)
+
+    def _prune_source(self, source: Path) -> None:
+        """Remove release folders (and stray files) left holding only clutter.
+
+        Anything still fresh, any video, and any file type not in
+        leftover_extensions (e.g. .rar parts) keeps its folder.
+        """
+        if not source.is_dir():
+            return
+        cutoff = time.time() - self.cfg.age_minutes * 60
+
+        def clutter(f: Path) -> bool:
+            try:
+                return (f.suffix.lower() in self.cfg.leftover_extensions
+                        and f.lstat().st_mtime <= cutoff)
+            except OSError:
+                return False
+
+        for dirpath, dirnames, filenames in os.walk(source, topdown=False):
+            d = Path(dirpath)
+            files = [d / f for f in filenames]
+            if d == source:  # never remove the source itself, only stray clutter in it
+                for f in filter(clutter, files):
+                    try:
+                        f.unlink()
+                        log.info("Deleted leftover: %s", f.name)
+                    except OSError as e:
+                        self._error(f"could not delete leftover {f.name}: {e}")
+                continue
+            rel = d.relative_to(source).as_posix()
+            if any((d / s).exists() or (d / s).is_symlink() for s in dirnames):
+                continue  # a subfolder survived (bottom-up walk)
+            if not all(clutter(f) for f in files):
+                log.debug("Keeping source folder: %s", rel)
+                continue
+            try:
+                for f in files:
+                    f.unlink()
+                d.rmdir()
+            except OSError as e:
+                self._error(f"could not remove source folder {rel}: {e}")
+                continue
+            log.info("Removed emptied source folder: %s", rel)
 
     def _record(self, key: str, status: str, dest: str | None = None) -> None:
         if not self.dry_run:
@@ -193,6 +286,8 @@ class Filer:
 
 def acquire_lock(path: Path):
     """Single-instance guard. flock is released by the kernel if we crash."""
+    import fcntl  # POSIX only; imported here so the module still loads for tests
+
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "w")
     try:

@@ -89,6 +89,12 @@ Read the plan. Compare with what FileBot produced for the same files. Tune `min_
 
 ## Operations
 - Review queue: `/data/stage/review/<date>/` holds the file plus `<file>.json` with Claude's guess and why it was rejected.
-  File it by hand, or `touch` the original in the source dir to re-queue it after fixing the cause.
-- Existing destination = treated as a duplicate and skipped (the source is never deleted).
+  File it by hand, or re-queue it after fixing the cause: for TV, `touch` the original in the source dir;
+  for movies (whose source copy has been deleted), move the file back into `/data/stage/movies` and `touch` it.
+- Movie source is drained (`delete_movie_source = true`): once a movie is filed, found to be a duplicate,
+  quarantined for review, or judged junk, it is deleted from `/data/stage/movies`, and release folders left
+  holding only clutter (`.nfo`, `.srt`, `.jpg`, ...) are removed. A folder with anything else in it (e.g. `.rar`
+  parts) or anything newer than `age_minutes` is left alone. The source is only deleted after the copy
+  has been verified. On the first run after enabling this, movies filed by earlier runs are also cleared out.
+- TV source is never drained (it is the seeding dir). Existing destination = duplicate, skipped.
 - API outage: affected files are not recorded in the ledger, so the next run retries them.
